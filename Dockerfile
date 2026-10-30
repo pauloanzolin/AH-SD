@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Instala dependências do sistema necessárias para compilação mínima e verificação de saúde
+# Instala dependências do sistema necessárias para healthcheck e utilitários
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -16,19 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia a aplicação e os arquivos estáticos
+# Copia a aplicação, os arquivos estáticos e o entrypoint
 COPY app /app/app
 COPY static /app/static
+COPY entrypoint.sh /app/entrypoint.sh
 
-# Cria o diretório de dados persistentes do SQLite
-RUN mkdir -p /app/data
-
-# Cria usuário não-root por segurança
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app
-USER appuser
+# Garante permissões de execução no entrypoint e cria a pasta de dados persistentes
+RUN chmod +x /app/entrypoint.sh && mkdir -p /app/data
 
 EXPOSE 8000
 
-# Executa o servidor Uvicorn com suporte a ASGI e múltiplos workers se necessário
+# Executa através do entrypoint para garantir permissões de volume antes de subir o uvicorn
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
