@@ -106,3 +106,4 @@ print(f" - Fortes: {result['qualitative_summary']['strengths']}")
 print(f" - Desafios: {result['qualitative_summary']['challenges']}")
 
 print("\nTODOS OS TESTES PSICOMÉTRICOS PASSARAM COM SUCESSO!")
+

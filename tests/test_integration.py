@@ -111,3 +111,4 @@ print(f"  - Classificacao: {report['results']['composite']['classification']}")
 print(f"  - Hiperexcitabilidades Mapeadas: {list(report['results']['fenomenologico']['overexcitabilities'].keys())}")
 
 print("\n--- TODOS OS 9 TESTES DE INTEGRACAO PASSARAM COM 100% DE SUCESSO! ---")
+

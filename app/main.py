@@ -28,7 +28,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Plataforma de Avaliação Neurocognitiva AH/SD",
     description="Sistema Psicométrico Computadorizado para Mente Superdotada",
-    version="1.0.0-beta"
+    version="1.1.0"
 )
 
 # Habilita CORS para ambientes de desenvolvimento e integração
@@ -375,6 +375,15 @@ def submit_module_responses(
         current_val["focus_loss_count"] = current_val.get("focus_loss_count", 0) + payload.telemetry.get("focus_loss_count", 0)
         current_val["blur_events"] = current_val.get("blur_events", 0) + payload.telemetry.get("blur_events", 0)
         current_val["fast_clicks"] = current_val.get("fast_clicks", 0) + payload.telemetry.get("fast_clicks", 0)
+        current_val["active_time_ms"] = current_val.get("active_time_ms", 0.0) + payload.telemetry.get("active_time_ms", 0.0)
+        current_val["idle_time_ms"] = current_val.get("idle_time_ms", 0.0) + payload.telemetry.get("idle_time_ms", 0.0)
+        
+        # Concatena lista de eventos de pausa
+        if "pause_events" in payload.telemetry and isinstance(payload.telemetry["pause_events"], list):
+            existing_pauses = current_val.get("pause_events", [])
+            existing_pauses.extend(payload.telemetry["pause_events"])
+            current_val["pause_events"] = existing_pauses
+
     session.set_validity_data(current_val)
 
     # Atualiza módulo corrente
@@ -393,6 +402,31 @@ def submit_module_responses(
     return {
         "message": f"Módulo {module_name} gravado com sucesso",
         "next_module": session.current_module
+    }
+
+# ----------------- REAPLICAÇÃO DE SUBTESTE ISOLADO -----------------
+
+@app.post("/api/sessions/{session_id}/module/{module_name}/reset")
+def reset_session_module(session_id: int, module_name: str, db: Session = Depends(get_db)):
+    session = db.query(TestSession).filter(TestSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    # Limpa as respostas anteriores desse módulo específico
+    deleted_count = db.query(TestResponse).filter(
+        TestResponse.session_id == session_id,
+        TestResponse.module_name == module_name
+    ).delete()
+
+    session.current_module = module_name
+    session.status = "in_progress"
+    db.commit()
+
+    return {
+        "message": f"Módulo {module_name} resetado com sucesso. Respostas limpas: {deleted_count}",
+        "session_id": session.id,
+        "module_name": module_name,
+        "redirect_url": f"/test/{session.id}"
     }
 
 # ----------------- FINALIZAÇÃO E GERAÇÃO DE LAUDO -----------------

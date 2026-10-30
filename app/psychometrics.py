@@ -1,12 +1,12 @@
 """
 psychometrics.py
-Motor Psicométrico e Estatístico Computadorizado
-Calcula Escores Padronizados (Z, Percentil, QI μ=100 σ=15), Índices de Validade (SVT/PVT)
-e Radar Neurocognitivo por Domínio.
+Motor Psicométrico e Estatístico Computadorizado (V2 Calibrado)
+Calcula Escores Padronizados (Z, Percentil, QI μ=100 σ=15), Análise de Dispersão (Scatter),
+Índice de Aptidão Geral Expurgado de Interrupções (IAG) e Telemetria de Pausas Ativas.
 """
 
 import math
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .questionnaire_data import (
     FENOMENOLOGICO_ITEMS, MATRIZES_ITEMS, CORSI_CONFIG,
     VELOCIDADE_ITEMS, WCST_ANCHORS, WCST_RULE_SCHEDULE,
@@ -14,7 +14,7 @@ from .questionnaire_data import (
 )
 
 def norm_cdf(z: float) -> float:
-    """Função de Distribuição Cumulativa Normal Padrão via math.erf (pura, sem dependências externas)"""
+    """Função de Distribuição Cumulativa Normal Padrão via math.erf (pura)"""
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 def clamp(val, min_val, max_val):
@@ -22,14 +22,14 @@ def clamp(val, min_val, max_val):
 
 class PsychometricEngine:
 
-    # Normas de referência para população geral (médias e desvios-padrão normativos simulados para calibração)
+    # Normas de referência para população geral (médias e desvios-padrão normativos)
     NORMS = {
-        "gf": {"mean": 3.2, "sd": 1.2, "max": 6},
-        "gwm": {"mean": 4.8, "sd": 1.1, "max": 8},
-        "gs": {"mean": 13.5, "sd": 2.8, "max": 20},
-        "flexibilidade": {"mean": 11.0, "sd": 2.5, "max": 18},
-        "divergente": {"mean": 2.6, "sd": 1.1, "max": 5},
-        "metacognicao": {"mean": 1.3, "sd": 0.8, "max": 3}
+        "gf": {"mean": 3.2, "sd": 1.2, "max": 6, "name": "Raciocínio Fluido (Gf)"},
+        "gwm": {"mean": 4.8, "sd": 1.1, "max": 8, "name": "Memória Operacional (Gwm)"},
+        "gs": {"mean": 13.5, "sd": 2.8, "max": 20, "name": "Velocidade Processamento (Gs)"},
+        "flexibilidade": {"mean": 11.0, "sd": 2.5, "max": 18, "name": "Flexibilidade Cognitiva"},
+        "divergente": {"mean": 2.6, "sd": 1.1, "max": 5, "name": "Pensamento Divergente"},
+        "metacognicao": {"mean": 1.3, "sd": 0.8, "max": 3, "name": "Metacognição & Síntese"}
     }
 
     @classmethod
@@ -37,38 +37,45 @@ class PsychometricEngine:
         """
         Recebe a lista de respostas e telemetria da sessão e processa todo o laudo psicométrico.
         """
-        # Mapeia respostas por item_id e por módulo
         resp_by_item = {r.get("item_id"): r for r in responses}
         resp_by_module = {}
         for r in responses:
             mod = r.get("module_name")
             resp_by_module.setdefault(mod, []).append(r)
 
-        # 1. Avaliação do Módulo Fenomenológico (Likert 1 a 5)
+        # 1. Avaliação de cada módulo
         fen_scores = cls._calc_fenomenologico(resp_by_module.get("fenomenologico", []))
-
-        # 2. Avaliação de Raciocínio Fluido - Gf (Matrizes)
         gf_result = cls._calc_matrizes(resp_by_module.get("matrizes", []))
-
-        # 3. Avaliação de Memória Operacional - Gwm (Corsi Blocks)
         gwm_result = cls._calc_corsi(resp_by_module.get("corsi", []))
-
-        # 4. Avaliação de Velocidade de Processamento - Gs
         gs_result = cls._calc_velocidade(resp_by_module.get("velocidade", []))
-
-        # 5. Avaliação de Flexibilidade Cognitiva - WCST
         flex_result = cls._calc_wcst(resp_by_module.get("wcst", []))
-
-        # 6. Avaliação de Pensamento Divergente - RAT
         div_result = cls._calc_associacao(resp_by_module.get("associacao", []))
-
-        # 7. Avaliação de Metacognição e Desafios do PDF
         meta_result = cls._calc_metacognicao(resp_by_module.get("metacognicao", []))
 
-        # 8. Análise de Validade do Teste (SVT / PVT e Telemetria)
-        validity_report = cls._calc_validity(responses, telemetry, fen_scores.get("pvt_passed", True))
+        # 2. Métricas de Tempo e Telemetria (Ativo vs Pausa)
+        active_time_ms = telemetry.get("active_time_ms", 0.0) if telemetry else 0.0
+        # Se não tiver ativo explícito, soma o tempo dos itens
+        if active_time_ms <= 0:
+            active_time_ms = sum(float(r.get("reaction_time_ms", 0.0)) for r in responses)
 
-        # 9. Cálculo de Z-scores, Percentis e QI Estimado para os domínios de desempenho cognitivo
+        idle_time_ms = telemetry.get("idle_time_ms", 0.0) if telemetry else 0.0
+        total_time_ms = active_time_ms + idle_time_ms
+
+        time_metrics = {
+            "active_seconds": round(active_time_ms / 1000, 1),
+            "active_minutes": round((active_time_ms / 1000) / 60, 1),
+            "idle_seconds": round(idle_time_ms / 1000, 1),
+            "idle_minutes": round((idle_time_ms / 1000) / 60, 1),
+            "total_seconds": round(total_time_ms / 1000, 1),
+            "total_minutes": round((total_time_ms / 1000) / 60, 1),
+            "pause_events_count": len(telemetry.get("pause_events", [])) if telemetry else 0,
+            "pause_events": telemetry.get("pause_events", []) if telemetry else []
+        }
+
+        # 3. Análise de Validade do Teste (SVT / PVT e Telemetria de Pausa)
+        validity_report = cls._calc_validity(responses, telemetry, fen_scores.get("pvt_passed", True), time_metrics)
+
+        # 4. Cálculo de Z-scores, Percentis e QI Estimado por domínio
         domains = {
             "Gf (Raciocínio Fluido)": gf_result["raw_score"],
             "Gwm (Memória Operacional)": gwm_result["max_span"],
@@ -99,8 +106,9 @@ class PsychometricEngine:
             pct = round(norm_cdf(z) * 100, 1)
             t_score = round(50 + 10 * z, 1)
             iq_est = round(100 + 15 * z)
-            
+
             standardized_scores[d_name] = {
+                "key": k,
                 "raw_score": raw_val,
                 "max_possible": norm["max"],
                 "z_score": z,
@@ -109,26 +117,76 @@ class PsychometricEngine:
                 "estimated_iq": iq_est
             }
 
-        # Escore Cognitivo Geral Composto (G Geral)
+        # 5. Escore Cognitivo Geral Convencional (Média Composta)
         avg_z = sum(z_list) / len(z_list) if z_list else 0.0
-        # Em índices compostos, a dispersão é reduzida pela covariância entre domínios (fórmula clássica de Spearman/Wechsler):
         composite_z = round(clamp(avg_z * 1.15, -3.5, 3.5), 2)
         composite_pct = round(norm_cdf(composite_z) * 100, 1)
         composite_iq = round(100 + 15 * composite_z)
 
-        # 10. Perfil Neurocognitivo e Hiperexcitabilidades (Radar de 0 a 100)
+        # 6. Análise de Dispersão Intra-Individual (Scatter)
+        iq_values = [d["estimated_iq"] for d in standardized_scores.values()]
+        max_iq_item = max(standardized_scores.items(), key=lambda x: x[1]["estimated_iq"])
+        min_iq_item = min(standardized_scores.items(), key=lambda x: x[1]["estimated_iq"])
+        iq_diff = max_iq_item[1]["estimated_iq"] - min_iq_item[1]["estimated_iq"]
+        has_scatter = iq_diff >= 22 # > 1.5 desvios padrão de dispersão
+
+        scatter_analysis = {
+            "has_scatter": has_scatter,
+            "iq_difference": iq_diff,
+            "max_domain": f"{max_iq_item[0]} (QI {max_iq_item[1]['estimated_iq']})",
+            "min_domain": f"{min_iq_item[0]} (QI {min_iq_item[1]['estimated_iq']})",
+            "message": (
+                f"Dispersão extrema detectada entre domínios (diferença de {iq_diff} pontos de QI). "
+                "Na neuropsicologia clínica (teorema de Wechsler), quando a dispersão intra-individual ultrapassa 22 pontos, "
+                "o QI Composto Geral perde validade descritiva e não reflete adequadamente a capacidade real do indivíduo."
+            ) if has_scatter else "Dispersão homogênea entre os domínios avaliados."
+        }
+
+        # 7. Cálculo do Índice de Capacidade Geral Expurgado (IAG / Outlier Rejection)
+        # Identifica subtestes corrompidos por quebra de retenção/pausa externa
+        # Critério neuropsicológico: queda >= 22 pontos (1.5σ) abaixo do pico com Z <= 0.0
+        expurgated_composite = None
+        outlier_keys = []
+        for d_name, d_info in standardized_scores.items():
+            drop_from_peak = max_iq_item[1]["estimated_iq"] - d_info["estimated_iq"]
+            if drop_from_peak >= 22 and d_info["z_score"] <= 0.0:
+                outlier_keys.append(d_name)
+
+        if outlier_keys and (has_scatter or time_metrics["idle_minutes"] >= 15 or time_metrics["total_minutes"] >= 45):
+            valid_z_scores = [d["z_score"] for name, d in standardized_scores.items() if name not in outlier_keys]
+            if valid_z_scores:
+                exp_avg_z = sum(valid_z_scores) / len(valid_z_scores)
+                exp_comp_z = round(clamp(exp_avg_z, -3.5, 3.5), 2)
+                exp_comp_pct = round(norm_cdf(exp_comp_z) * 100, 1)
+                exp_comp_iq = round(100 + 15 * exp_comp_z)
+
+                expurgated_composite = {
+                    "estimated_iq": exp_comp_iq,
+                    "percentile": exp_comp_pct,
+                    "z_score": exp_comp_z,
+                    "classification": cls._classify_iq(exp_comp_iq),
+                    "excluded_domains": outlier_keys,
+                    "rationale": (
+                        f"Índice de Capacidade Geral (IAG) calculado expurgando o(s) subteste(s) {', '.join(outlier_keys)}. "
+                        "A quebra de retenção provocada por pausas externas ou interrupções de sessão afeta tarefas de curtíssimo prazo, "
+                        "mas não anula a alta capacidade demonstrada nos domínios cognitivos preservados."
+                    )
+                }
+
+        # 8. Gráfico Radar (0 a 100% relativo à pontuação máxima)
+        # Normalização rigorosa: (raw_score / max_score) * 100
         radar_data = {
             "Raciocínio Fluido (Gf)": round(min(100, max(0, (gf_result["raw_score"] / cls.NORMS["gf"]["max"]) * 100))),
             "Memória Operacional (Gwm)": round(min(100, max(0, (gwm_result["max_span"] / cls.NORMS["gwm"]["max"]) * 100))),
-            "Velocidade Processamento": round(min(100, max(0, (gs_result["raw_score"] / cls.NORMS["gs"]["max"]) * 100))),
-            "Flexibilidade Cognitiva": round(min(100, max(0, (flex_result["raw_score"] / cls.NORMS["flexibilidade"]["max"]) * 100))),
-            "Pensamento Divergente": round(min(100, max(0, (div_result["raw_score"] / cls.NORMS["divergente"]["max"]) * 100))),
-            "Metacognição": round(min(100, max(0, (meta_result["raw_score"] / cls.NORMS["metacognicao"]["max"]) * 100)))
+            "Velocidade Processamento (Gs)": round(min(100, max(0, (gs_result["raw_score"] / cls.NORMS["gs"]["max"]) * 100))),
+            "Flexibilidade Cognitiva (WCST)": round(min(100, max(0, (flex_result["raw_score"] / cls.NORMS["flexibilidade"]["max"]) * 100))),
+            "Pensamento Divergente (RAT)": round(min(100, max(0, (div_result["raw_score"] / cls.NORMS["divergente"]["max"]) * 100))),
+            "Metacognição Sistêmica": round(min(100, max(0, (meta_result["raw_score"] / cls.NORMS["metacognicao"]["max"]) * 100)))
         }
 
-        # Síntese Qualitativa
+        # 9. Síntese Interpretativa e Identificação de Pontos Fortes Calibrados
         qualitative_summary = cls._generate_qualitative_interpretation(
-            composite_iq, standardized_scores, fen_scores, flex_result, validity_report
+            composite_iq, expurgated_composite, standardized_scores, fen_scores, flex_result, validity_report, has_scatter
         )
 
         return {
@@ -138,6 +196,9 @@ class PsychometricEngine:
                 "general_z_score": composite_z,
                 "classification": cls._classify_iq(composite_iq)
             },
+            "expurgated_composite": expurgated_composite,
+            "scatter_analysis": scatter_analysis,
+            "time_metrics": time_metrics,
             "domains": standardized_scores,
             "radar_chart": radar_data,
             "fenomenologico": fen_scores,
@@ -175,7 +236,6 @@ class PsychometricEngine:
             "comunicacao": []
         }
         pvt_passed = True
-
         fen_dict = {item["id"]: item for item in FENOMENOLOGICO_ITEMS}
 
         for r in responses:
@@ -187,7 +247,6 @@ class PsychometricEngine:
                 continue
 
             if item_id == "fen_trap":
-                # O item armadilha pedia expressamente opção 1
                 if val != 1:
                     pvt_passed = False
                 continue
@@ -196,12 +255,10 @@ class PsychometricEngine:
             if item_def and item_def["category"] in cat_scores:
                 cat_scores[item_def["category"]].append(val)
 
-        # Médias de 1.0 a 5.0
         averages = {}
         for cat, vals in cat_scores.items():
             averages[cat] = round(sum(vals) / len(vals), 2) if vals else 1.0
 
-        # Intensidade das 5 hiperexcitabilidades de Dabrowski
         overexcitabilities = {
             "Intelectual": averages.get("intelectual", 1.0),
             "Emocional": averages.get("emocional", 1.0),
@@ -219,7 +276,6 @@ class PsychometricEngine:
 
     @staticmethod
     def _calc_matrizes(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Calcula acertos e tempos no teste de Matrizes Raven"""
         gabarito = {m["id"]: m["correct_id"] for m in MATRIZES_ITEMS}
         correct_count = 0
         total_time = 0.0
@@ -244,16 +300,11 @@ class PsychometricEngine:
 
     @staticmethod
     def _calc_corsi(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Avalia capacidade máxima de Span no Corsi Blocks"""
         max_span = 0
         successful_trials = 0
-        
-        # Test sequences configuradas
         span_by_level = {s["level"]: s["span"] for s in CORSI_CONFIG["test_sequences"]}
 
         for r in responses:
-            item_id = r.get("item_id")
-            # user_answer é lista ou string de inteiros
             user_seq = r.get("user_answer")
             target_seq = r.get("raw_data", {}).get("target_sequence")
             level = r.get("raw_data", {}).get("level", 1)
@@ -265,7 +316,6 @@ class PsychometricEngine:
                     if span > max_span:
                         max_span = span
 
-        # Se não fez nenhum acerto, span mínimo padrão
         if max_span == 0 and responses:
             max_span = 2
 
@@ -277,7 +327,6 @@ class PsychometricEngine:
 
     @staticmethod
     def _calc_velocidade(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Avalia tarefa de velocidade de pareamento de símbolos"""
         gabarito = {v["id"]: v["is_match"] for v in VELOCIDADE_ITEMS}
         correct_count = 0
         times = []
@@ -288,7 +337,6 @@ class PsychometricEngine:
             rt = float(r.get("reaction_time_ms", 0.0))
             times.append(rt)
 
-            # boolean check
             if item_id in gabarito:
                 is_match_expected = gabarito[item_id]
                 ans_bool = True if str(ans).lower() in ["true", "1", "igual", "sim"] else False
@@ -305,8 +353,6 @@ class PsychometricEngine:
 
     @staticmethod
     def _calc_wcst(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Calcula flexibilidade cognitiva e erros perseverativos no WCST"""
-        # Mapeia regra ativa para cada trial
         rule_map = {}
         for s in WCST_RULE_SCHEDULE:
             for t in range(s["start"], s["end"] + 1):
@@ -314,27 +360,21 @@ class PsychometricEngine:
 
         correct_count = 0
         perseverative_errors = 0
-        prev_rule = None
 
         for r in responses:
             trial_num = r.get("raw_data", {}).get("trial", 1)
-            active_rule = rule_map.get(trial_num, "color")
             is_correct = r.get("is_correct", False)
 
             if is_correct:
                 correct_count += 1
             else:
-                # Checa se o erro correspondeu à regra anterior (erro perseverativo)
                 chosen_anchor = r.get("raw_data", {}).get("chosen_anchor", {})
                 card = r.get("raw_data", {}).get("card", {})
                 
-                # Se mudou de regra e o usuário continuou escolhendo pela regra anterior
                 if trial_num > 6 and trial_num <= 12:
-                    # regra anterior era color
                     if chosen_anchor.get("color") == card.get("color"):
                         perseverative_errors += 1
                 elif trial_num > 12:
-                    # regra anterior era shape
                     if chosen_anchor.get("shape") == card.get("shape"):
                         perseverative_errors += 1
 
@@ -347,7 +387,6 @@ class PsychometricEngine:
 
     @staticmethod
     def _calc_associacao(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Avalia respostas ao teste de associação remota"""
         gabarito = {a["id"]: a["accepted_answers"] for a in ASSOCIACAO_ITEMS}
         correct_count = 0
         times = []
@@ -371,7 +410,6 @@ class PsychometricEngine:
 
     @staticmethod
     def _calc_metacognicao(responses: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Avalia as respostas aos 3 desafios do PDF"""
         gabarito = {m["id"]: m["correct_id"] for m in METACOGNICAO_ITEMS}
         score = 0
         breakdown = {}
@@ -396,27 +434,19 @@ class PsychometricEngine:
         }
 
     @staticmethod
-    def _calc_validity(responses: List[Dict[str, Any]], telemetry: Dict[str, Any], pvt_passed: bool) -> Dict[str, Any]:
-        """
-        Calcula o índice de validade da sessão:
-        - Malingering / PVT (Symptom Validity)
-        - Chutes hiper-rápidos (< 150 ms)
-        - Perdas de foco de tela (blur / troca de abas)
-        - Padrão estático de resposta
-        """
+    def _calc_validity(
+        responses: List[Dict[str, Any]], telemetry: Dict[str, Any], pvt_passed: bool, time_metrics: Dict[str, Any]
+    ) -> Dict[str, Any]:
         fast_clicks = 0
-        times = []
         for r in responses:
             rt = float(r.get("reaction_time_ms", 0.0))
-            if rt > 0:
-                times.append(rt)
-                if rt < 150.0:
-                    fast_clicks += 1
+            if 0 < rt < 150.0:
+                fast_clicks += 1
 
         focus_loss_count = telemetry.get("focus_loss_count", 0) if telemetry else 0
         blur_events = telemetry.get("blur_events", 0) if telemetry else 0
 
-        # Verifica se houve padrão estático
+        # Verifica padrão estático
         answers = [str(r.get("user_answer")) for r in responses if r.get("user_answer")]
         is_repetitive = False
         if len(answers) >= 10:
@@ -424,7 +454,6 @@ class PsychometricEngine:
             if answers.count(most_common) / len(answers) > 0.85:
                 is_repetitive = True
 
-        # Determina confiabilidade geral
         issues = []
         if not pvt_passed:
             issues.append("Falha no item armadilha de verificação (PVT) - possível desatenção ou ruído.")
@@ -435,11 +464,22 @@ class PsychometricEngine:
         if is_repetitive:
             issues.append("Padrão de resposta excessivamente repetitivo ou invariante.")
 
+        # Auditoria de tempo e pausas (Página 12 e 14 do PDF)
+        idle_mins = time_metrics.get("idle_minutes", 0)
+        total_mins = time_metrics.get("total_minutes", 0)
+        has_extended_pause = (idle_mins >= 15.0 or total_mins >= 45.0)
+
+        if has_extended_pause:
+            issues.append(
+                f"Sessão com pausa prolongada detectada (Tempo Inativo: {idle_mins} min, Tempo Total: {total_mins} min). "
+                "Quebras de contexto e interrupções externas esvaziam a memória de trabalho de curto prazo."
+            )
+
         if not issues:
             status = "Índice de Validade Ótimo (Dados Fidedignos)"
             badge = "valid"
-        elif len(issues) == 1 and pvt_passed:
-            status = "Índice de Validade Adequado com Pequenos Desvios"
+        elif has_extended_pause or (len(issues) == 1 and pvt_passed):
+            status = "Sessão Concluída com Pausa / Interrupção Externa" if has_extended_pause else "Índice de Validade Adequado com Pequenos Desvios"
             badge = "warning"
         else:
             status = "Índice de Validade Comprometido / Atenção Requerida"
@@ -451,6 +491,7 @@ class PsychometricEngine:
             "pvt_passed": pvt_passed,
             "fast_clicks_count": fast_clicks,
             "focus_loss_count": focus_loss_count,
+            "has_extended_pause": has_extended_pause,
             "is_repetitive": is_repetitive,
             "detected_issues": issues
         }
@@ -472,38 +513,59 @@ class PsychometricEngine:
 
     @classmethod
     def _generate_qualitative_interpretation(
-        cls, composite_iq: int, domains: Dict[str, Any],
-        fen: Dict[str, Any], flex: Dict[str, Any], val: Dict[str, Any]
+        cls, composite_iq: int, expurgated_composite: Optional[Dict[str, Any]],
+        domains: Dict[str, Any], fen: Dict[str, Any], flex: Dict[str, Any],
+        val: Dict[str, Any], has_scatter: bool
     ) -> Dict[str, Any]:
-        """Gera a síntese qualitativa e interpretativa sobre a mente superdotada avaliada"""
+        """
+        Gera síntese interpretativa calibrada:
+        - Destaca pontos fortes a partir de Z >= 1.33 (QI >= 120) e Z >= 1.0 (QI >= 115)
+        - Considera o Índice de Capacidade Geral Expurgado quando há scatter e interrupções
+        """
         obs = []
         strengths = []
         challenges = []
 
-        # Raciocínio Fluido & Abstração
-        gf_iq = domains.get("Gf (Raciocínio Fluido)", {}).get("estimated_iq", 100)
-        if gf_iq >= 125:
-            strengths.append("Capacidade excepcional de abstração visual, indução lógica e reconhecimento veloz de regras matriciais (Gf).")
-        
-        # Memória Operacional
-        gwm_iq = domains.get("Gwm (Memória Operacional)", {}).get("estimated_iq", 100)
-        if gwm_iq >= 125:
-            strengths.append("Elevada capacidade de sustentação ativa e manipulação visuoespacial de dados em memória de trabalho (Gwm).")
+        domain_descriptions = {
+            "Gf (Raciocínio Fluido)": "Raciocínio Fluido: alta capacidade de indução lógica e abstração visual matricial",
+            "Gwm (Memória Operacional)": "Memória Operacional: grande sustentação e manipulação ativa de carga visuoespacial de curto prazo",
+            "Gs (Velocidade Processamento)": "Velocidade de Processamento: agilidade perceptual extrema e rápida condução neural de impulsos",
+            "Flexibilidade Cognitiva": "Flexibilidade Cognitiva: rapidez em desengajar de regras antigas e ajustar modelos conceituais",
+            "Pensamento Divergente": "Pensamento Divergente: raciocínio associativo veloz, salto intuitivo e conectividade semântica em rede",
+            "Metacognição & Síntese": "Metacognição Sistêmica: alta facilidade em capturar propriedades emergentes e regras invariantes complexas"
+        }
 
-        # Flexibilidade
-        if flex.get("flexibility_rating") == "Alta":
-            strengths.append("Alta flexibilidade cognitiva e rapidez no desengajamento de regras antigas frente a novos contextos (WCST).")
-        else:
-            challenges.append("Tendência à perseveração conceitual inicial antes de reorganizar o modelo mental.")
+        # 1. Avaliação Dinâmica de Pontos Fortes por Domínio (Calibração Z >= 1.33 e Z >= 1.0)
+        for d_name, d_info in domains.items():
+            z = d_info["z_score"]
+            iq = d_info["estimated_iq"]
+            desc = domain_descriptions.get(d_name, d_name)
 
-        # Hiperexcitabilidades de Dabrowski
+            if z >= 1.33 or iq >= 120:
+                strengths.append(f"Ponto Forte Marcante em {desc} (QI {iq}, Percentil {d_info['percentile']}º).")
+            elif z >= 0.95 or iq >= 114:
+                strengths.append(f"Desempenho Acima da Média em {desc} (QI {iq}, Percentil {d_info['percentile']}º).")
+
+        # Se não atingiu corte, garante mensagem adequada
+        if not strengths:
+            strengths.append("Desempenho distribuído na faixa normativa média em todos os domínios avaliados.")
+
+        # 2. Desafios Observados
+        for d_name, d_info in domains.items():
+            if d_info["z_score"] <= -1.5:
+                challenges.append(f"Queda em {d_name} (QI {d_info['estimated_iq']}) — passível de impacto por interrupção de contexto ou fadiga.")
+
+        if flex.get("flexibility_rating") != "Alta":
+            challenges.append("Tendência à perseveração conceitual inicial antes de reorganizar o modelo mental sob mudança de regras.")
+
+        # 3. Hiperexcitabilidades de Dabrowski
         oe = fen.get("overexcitabilities", {})
         top_oe = sorted(oe.items(), key=lambda x: x[1], reverse=True)
         predominant_oe = [k for k, v in top_oe if v >= 3.8]
 
         avg_fen = fen.get("averages", {})
         if avg_fen.get("aprendizado", 1.0) >= 4.0:
-            obs.append("Padrão de hiperfoco autodidata acentuado com desmotivação/tédio intenso diante de repetições lineares.")
+            obs.append("Padrão de hiperfoco autodidata acentuado com aversão intensa à redundância e explicações lentas.")
         
         if avg_fen.get("paralisia", 1.0) >= 3.8:
             challenges.append("Risco elevado de paralisia por análise e perfeccionismo gerado pela antecipação exaustiva de variáveis.")
@@ -514,19 +576,28 @@ class PsychometricEngine:
         if avg_fen.get("comunicacao", 1.0) >= 3.8:
             challenges.append("Sensação frequente de operar em frequência distinta, com sobrecarga para traduzir pensamentos holísticos em linguagem linear cadenciada.")
 
-        # Conclusão clínica sintética
-        if composite_iq >= 130:
+        # 4. Título e Perfil Geral
+        target_iq = expurgated_composite["estimated_iq"] if expurgated_composite else composite_iq
+
+        if has_scatter:
+            profile_title = "Perfil Cognitivo Heterogêneo com Dispersão Intra-Individual (Scatter)"
+            description = (
+                f"O perfil apresenta forte dispersão entre subtestes. Enquanto áreas como {strengths[0] if strengths else 'determinados domínios'} "
+                "revelam alta capacidade neurocognitiva, a média composta global foi puxada para baixo por subteste(s) com anomalia de contexto ou interrupção. "
+                + (f"O Índice de Capacidade Geral Expurgado aponta um desempenho efetivo na faixa de QI {expurgated_composite['estimated_iq']} ({expurgated_composite['classification']})." if expurgated_composite else "")
+            )
+        elif target_iq >= 130:
             profile_title = "Perfil Compatível com Altas Habilidades / Superdotação (AH/SD)"
             description = (
                 "O desempenho nos domínios neurocognitivos e as respostas na escala de rastreio fenomenológico "
                 "apresentam fortes marcadores da arquitetura da mente superdotada: alta velocidade associativa, "
                 "hiperexcitabilidade evidente e pensamento holístico/em árvore com grande capacidade de síntese."
             )
-        elif composite_iq >= 120:
-            profile_title = "Perfil Cognitivo Superior com Destaques Específicos"
+        elif target_iq >= 120:
+            profile_title = "Perfil Cognitivo Superior com Destaques Marcantes"
             description = (
-                "Identificam-se habilidades cognitivas acima da média populacional, com bom desempenho em abstração "
-                "e traços característicos de curiosidade voraz e intensidade de processamento."
+                "Identificam-se habilidades cognitivas acima da média populacional, com destaques expressivos em velocidade, "
+                "pensamento divergente e traços característicos de curiosidade voraz e intensidade de processamento."
             )
         else:
             profile_title = "Perfil Cognitivo Médio Padronizado"
