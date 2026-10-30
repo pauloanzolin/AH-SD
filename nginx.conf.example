@@ -1,0 +1,50 @@
+# nginx.conf.example
+# Exemplo de configuração de Proxy Reverso Nginx para a Plataforma AH/SD
+
+upstream ahsd_app {
+    # Aponta para a porta exposta pelo container Docker (ou nome do container se estiver na mesma rede Docker)
+    server 127.0.0.1:8000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name seu-dominio.com.br;
+
+    # Redirecionamento HTTP para HTTPS (Recomendado em Produção)
+    # return 301 https://$host$request_uri;
+
+    client_max_body_size 20M;
+
+    # Compactação Gzip para agilidade na transferência dos testes e scripts
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    location / {
+        proxy_pass http://ahsd_app;
+        proxy_http_version 1.1;
+
+        # Headers obrigatórios para identificar o cliente original e protocolo
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Suporte a WebSockets / Conexões persistentes
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts generosos para evitar que o Nginx derrube o teste em pausas reflexivas
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+    }
+
+    # Cache opcional para arquivos estáticos (CSS, JS, imagens)
+    location /static/ {
+        proxy_pass http://ahsd_app/static/;
+        proxy_set_header Host $host;
+        expires 7d;
+        add_header Cache-Control "public, no-transform";
+    }
+}

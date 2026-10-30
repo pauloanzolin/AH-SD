@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ambiente de Testagem Psicométrica - AH/SD</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Top bar do teste -->
+  <nav class="navbar" style="padding: 0.75rem 1.5rem;">
+    <div class="brand">
+      <div class="brand-icon">Ψ</div>
+      <div>
+        <h1 id="topParticipantName">Participante</h1>
+        <span id="topProjectName">Projeto</span>
+      </div>
+    </div>
+    
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <div style="text-align: right;">
+        <div id="moduleIndicator" style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan);">Módulo 1 de 7</div>
+        <div id="timerDisplay" style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">00:00</div>
+      </div>
+      <a href="/" class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="return confirm('Deseja salvar e pausar o teste para retornar mais tarde?')">Pausar e Sair</a>
+    </div>
+  </nav>
+
+  <!-- Container de Testagem -->
+  <main class="container" style="max-width: 950px; padding: 1.5rem 1rem;">
+    
+    <!-- Alerta de perda de foco / integridade -->
+    <div id="focusAlert" class="focus-alert">
+      ⚠️ <strong>Atenção:</strong> Detectamos que você saiu da janela do teste. Para assegurar a fidedignidade psicométrica e o controle de tempo, permaneça com a janela em foco contínuo.
+    </div>
+
+    <!-- Barra de Progresso Geral -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+      <div style="font-size: 0.85rem; color: var(--text-secondary);" id="progressText">Progresso do Módulo</div>
+      <div class="progress-track" style="margin: 0; flex: 1; margin: 0 1rem;">
+        <div id="progressFill" class="progress-fill" style="width: 5%;"></div>
+      </div>
+      <div id="progressPercentage" style="font-size: 0.85rem; font-weight: 700; color: var(--accent-cyan);">5%</div>
+    </div>
+
+    <!-- Caixa Principal do Teste -->
+    <div id="testBox" class="test-box">
+      <!-- Conteúdo inserido dinamicamente pelo runner.js -->
+      <div style="text-align: center; padding: 4rem;">
+        <h3>Inicializando ambiente neuropsicológico...</h3>
+        <p style="color: var(--text-muted); margin-top: 0.5rem;">Calibrando temporizadores de precisão...</p>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="/static/js/runner.js"></script>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laudo Psicométrico Neurocognitivo - AH/SD</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Top bar do relatório -->
+  <nav class="navbar no-print">
+    <div class="brand">
+      <div class="brand-icon">Ψ</div>
+      <div>
+        <h1>Relatório Psicométrico</h1>
+        <span>LAUDO DE TRIAGEM NEUROCOGNITIVA COMPUTADORIZADA</span>
+      </div>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+      <a href="/" class="btn btn-secondary">← Voltar ao Painel</a>
+      <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+    </div>
+  </nav>
+
+  <main class="container" style="max-width: 1000px; padding: 2rem 1.5rem;">
+    
+    <!-- Cabeçalho do Laudo Clínico -->
+    <div class="report-header">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <span class="badge badge-completed" style="margin-bottom: 0.5rem; display: inline-block;">Avaliação Concluída</span>
+          <h2 id="participantTitle" style="font-size: 1.8rem; margin: 0.25rem 0;">Paulo</h2>
+          <div id="participantMeta" style="color: var(--text-secondary); font-size: 0.95rem;">
+            Idade: — • Escolaridade: — • Projeto: Teste 1
+          </div>
+        </div>
+        <div style="text-align: right; color: var(--text-secondary); font-size: 0.85rem;">
+          <div>Data da Realização: <strong id="reportDate" style="color: var(--text-primary);">—</strong></div>
+          <div>Duração Total: <strong id="reportDuration" style="color: var(--text-primary);">—</strong></div>
+          <div>Protocolo da Sessão: <code id="reportSessionId">#—</code></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cards de Resumo Psicométrico Geral -->
+    <div class="report-grid-summary">
+      <div class="summary-stat-card">
+        <div class="stat-label">QI Estimado Composto</div>
+        <div id="statIq" class="stat-value">—</div>
+        <div id="statClassification" style="font-size: 0.85rem; font-weight: 600; color: var(--accent-cyan);">—</div>
+      </div>
+
+      <div class="summary-stat-card">
+        <div class="stat-label">Percentil Geral</div>
+        <div id="statPercentile" class="stat-value">—</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">Curva Normal de Gauss</div>
+      </div>
+
+      <div class="summary-stat-card">
+        <div class="stat-label">Escore Z Padronizado</div>
+        <div id="statZScore" class="stat-value">—</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">Desvio Padrão (σ)</div>
+      </div>
+
+      <div class="summary-stat-card">
+        <div class="stat-label">Índice de Validade (PVT)</div>
+        <div id="statValidityBadge" style="margin: 0.75rem 0;">
+          <span class="badge badge-completed">Válido</span>
+        </div>
+        <div id="statValidityText" style="font-size: 0.8rem; color: var(--text-secondary);">Dados Fidedignos</div>
+      </div>
+    </div>
+
+    <!-- Gráfico Radar do Perfil Neurocognitivo -->
+    <div class="report-section">
+      <h3>Perfil Neurocognitivo Integrado (Radar de Domínios)</h3>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.5rem;">
+        Representação da amplitude de desempenho nos 6 domínios avaliados (0 a 100 pontos relativos):
+      </p>
+      <div class="radar-wrapper">
+        <canvas id="radarChart" width="550" height="420" style="max-width: 100%; height: auto;"></canvas>
+      </div>
+    </div>
+
+    <!-- Tabela Normativa por Domínio -->
+    <div class="report-section">
+      <h3>Detalhamento Psicométrico por Domínio</h3>
+      <table class="score-table">
+        <thead>
+          <tr>
+            <th>Domínio Cognitivo</th>
+            <th>Pontuação Bruta</th>
+            <th>Escore Z</th>
+            <th>Escore T</th>
+            <th>Percentil</th>
+            <th>QI Est. (μ=100, σ=15)</th>
+          </tr>
+        </thead>
+        <tbody id="domainsTableBody">
+          <!-- Inserido dinamicamente via report.js -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Hiperexcitabilidades de Dabrowski e Rastreio Fenomenológico -->
+    <div class="report-section">
+      <h3>Hiperexcitabilidades (Dabrowski) & Estilo Operacional</h3>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.5rem;">
+        Níveis de intensidade fenomenológica mensurados na escala qualitativa (1.0 = Baixo a 5.0 = Muito Alto):
+      </p>
+
+      <div id="overexcitabilitiesBars" style="display: flex; flex-direction: column; gap: 1rem;">
+        <!-- Inserido dinamicamente via report.js -->
+      </div>
+    </div>
+
+    <!-- Síntese Qualitativa e Parecer -->
+    <div class="report-section">
+      <h3>Síntese Interpretativa da Arquitetura Cognitiva</h3>
+      
+      <div style="margin-bottom: 1.5rem;">
+        <h4 id="qualitativeTitle" style="color: var(--accent-cyan); font-size: 1.15rem; margin-bottom: 0.5rem;">
+          Perfil Compatível com Altas Habilidades / Superdotação
+        </h4>
+        <p id="qualitativeDesc" style="color: var(--text-primary); line-height: 1.6; font-size: 0.95rem;">
+          Carregando parecer...
+        </p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;" class="print-stack">
+        <div style="background-color: var(--bg-input); padding: 1.25rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent-emerald);">
+          <h5 style="color: #34d399; font-size: 0.95rem; margin-bottom: 0.75rem;">Pontos Fortes Marcantes:</h5>
+          <ul id="qualitativeStrengths" style="margin-left: 1.2rem; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+          </ul>
+        </div>
+
+        <div style="background-color: var(--bg-input); padding: 1.25rem; border-radius: var(--radius-sm); border-left: 3px solid var(--accent-amber);">
+          <h5 style="color: #fbbf24; font-size: 0.95rem; margin-bottom: 0.75rem;">Desafios Operacionais & Gargalos:</h5>
+          <ul id="qualitativeChallenges" style="margin-left: 1.2rem; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resoluções dos Desafios Metacognitivos -->
+    <div class="report-section">
+      <h3>Resoluções dos Desafios Metacognitivos Aprofundados</h3>
+      <div id="metaDetails" style="display: flex; flex-direction: column; gap: 1rem;">
+        <!-- Inserido dinamicamente -->
+      </div>
+    </div>
+
+    <!-- Telemetria e Fidedignidade -->
+    <div class="report-section">
+      <h3>Auditoria de Integridade da Sessão (Telemetria)</h3>
+      <div id="telemetryDetails" style="font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6;">
+      </div>
+    </div>
+
+    <!-- Declaração Deontológica Obrigatória -->
+    <div class="disclaimer-box">
+      <strong>DECLARAÇÃO DEONTOLÓGICA E LIMITAÇÕES PSICOMÉTRICAS:</strong>
+      <p id="disclaimerText" style="margin-top: 0.4rem;">
+        Este relatório foi gerado por um sistema computadorizado de triagem neurocognitiva com base em parâmetros
+        estatísticos e paradigmas experimentais. Ele não substitui nem equivale a um laudo neuropsicológico formal
+        emitido por profissional legalmente habilitado em sessão clínica individual presencial com baterias oficiais padronizadas.
+      </p>
+    </div>
+
+  </main>
+
+  <script src="/static/js/report.js"></script>
+</body>
+</html>
